@@ -53,11 +53,15 @@ User message → POST /api/chat (streaming)
 
 ### Key Architectural Decisions
 
-**Virtual File System** — All files live in React state (`FileSystemContext`). No disk writes. Files are serialized to JSON and stored in the `Project.fileData` DB column.
+**Virtual File System** — All files live in React state (`FileSystemContext`). No disk writes. The filesystem serializes to a node tree for the DB (`Project.fileData`) and is also sent in each `/api/chat` request body so the server can apply tool calls and return the updated state.
 
-**AI Tool Calling** — Claude edits code by calling `str_replace_editor` (for targeted edits) and `file_manager` (for create/delete/rename). Tool handlers live in `src/lib/file-system-context.tsx` and the tool definitions in `src/lib/tools/`.
+**AI Tool Calling** — Claude edits code via two tools defined in `src/lib/tools/`:
+- `str_replace_editor`: operations `view`, `create`, `str_replace`, `insert` (and a no-op `undo_edit`)
+- `file_manager`: operations `rename`, `delete`
 
-**Preview Sandbox** — `PreviewFrame.tsx` injects transformed code into an iframe with an import map pointing to esm.sh for npm packages. Babel standalone runs in the browser to handle JSX/TSX.
+Tool handlers that apply these operations to the virtual FS live in `FileSystemContext.handleToolCall()`.
+
+**Preview Sandbox** — `PreviewFrame.tsx` transpiles each virtual file via Babel (stripping CSS imports), creates blob URLs, and injects them into an iframe using an import map. External deps resolve to esm.sh. Entry point discovery order: `/App.jsx` → `/App.tsx` → `/index.jsx` → first JSX file found.
 
 **State Management** — Two contexts cover the entire app:
 
@@ -76,6 +80,15 @@ Three-panel resizable layout in `src/app/main-content.tsx`:
 ### Database
 
 SQLite via Prisma. Schema: `User` (email, bcrypt password) → `Project` (name, messages JSON, fileData JSON).
+
+The database schema is defined in `prisma/schema.prisma`. Reference it anytime you need to understand the structure of data stored in the database.
+
+### System Prompt Constraints
+
+The generation prompt (`src/lib/prompts/generation.tsx`) enforces rules that the AI must follow:
+- Root entry point must be `/App.jsx`
+- Use Tailwind for all styling (no hardcoded CSS)
+- Use `@/` import alias for local file imports
 
 ### Path Alias
 
